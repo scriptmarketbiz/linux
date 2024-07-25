@@ -1,0 +1,157 @@
+Update the Package List and Install BIND:
+sudo apt update
+sudo apt install bind9
+
+
+Configure BIND for georgianlens.com:
+Edit the BIND configuration file to set up the zone for georgianlens.com. Open /etc/bind/named.conf.local in a text editor:
+
+
+sudo nano /etc/bind/named.conf.local
+Add the following configuration:
+bash
+Copy code
+key "ddns_key" {
+    algorithm hmac-md5;
+    secret "your-secret-key";
+};
+
+zone "georgianlens.com" {
+    type master;
+    file "/etc/bind/zones/db.georgianlens.com";
+    allow-update { key ddns_key; };
+};
+
+
+Create the Zone File for georgianlens.com:
+
+Create the directory for zone files if it doesn’t exist:
+
+
+sudo mkdir -p /etc/bind/zones
+Create and edit the zone file for georgianlens.com:
+
+
+sudo nano /etc/bind/zones/db.georgianlens.com
+Add the following content, replacing 31.146.240.11 (your current IP address) for now:
+
+bash
+Copy code
+$TTL    604800
+@       IN      SOA     ns1.georgianlens.com. admin.georgianlens.com. (
+                              2024072501 ; Serial
+                              604800     ; Refresh
+                              86400      ; Retry
+                              2419200    ; Expire
+                              604800 )   ; Negative Cache TTL
+;
+
+@       IN      NS      ns1.georgianlens.com.
+ns1     IN      A       31.146.240.11
+
+www     IN      A       31.146.240.11
+
+
+Install Necessary Packages:
+Ensure you have the necessary packages installed:
+sudo apt-get install bind9utils
+
+
+
+
+Manually Generate the HMAC-MD5 Key:
+Use the ddns-confgen utility to generate the key:
+sudo ddns-confgen -a hmac-md5
+
+
+Steps to Configure BIND with the Generated Key:
+Update BIND Configuration:
+
+Open /etc/bind/named.conf.local in a text editor:
+sudo nano /etc/bind/named.conf.local
+
+key "ddns-key" {
+    algorithm hmac-md5;
+    secret "PS/zDbfc2vTyiqi/IotM0Q==";
+};
+
+zone "georgianlens.com" {
+    type master;
+    file "/etc/bind/zones/db.georgianlens.com";
+    update-policy {
+        grant ddns-key zonesub ANY;
+    };
+};
+
+
+Create the Key File:
+
+Create and edit the key file:
+sudo nano /etc/bind/ddns.key
+key "ddns-key" {
+    algorithm hmac-md5;
+    secret "PS/zDbfc2vTyiqi/IotM0Q==";
+};
+
+
+Secure the Key File:
+sudo chown root:bind /etc/bind/ddns.key
+
+Add the following content:
+
+key "ddns-key" {
+    algorithm hmac-md5;
+    secret "PS/zDbfc2vTyiqi/IotM0Q==";
+};
+
+Secure the Key File:
+sudo chown root:bind /etc/bind/ddns.key
+sudo chmod 640 /etc/bind/ddns.key
+
+
+Create the Script in a Directory:
+
+First, create a directory for your scripts if you don't have one already:
+
+Create Directory for Script:
+mkdir -p ~/scripts
+
+Create and Edit Script:
+nano ~/scripts/update_ddns.sh
+
+Add Script Content:
+#!/bin/bash
+
+# Detect current public IP address
+IP=$(curl -s http://checkip.amazonaws.com)
+
+# Update DNS records for georgianlens.com
+nsupdate -k /etc/bind/ddns.key <<EOF
+server localhost
+zone georgianlens.com
+update delete ns1.georgianlens.com A
+update add ns1.georgianlens.com 300 A $IP
+update delete www.georgianlens.com A
+update add www.georgianlens.com 300 A $IP
+send
+EOF
+
+Make Script Executable:
+chmod +x ~/scripts/update_ddns.sh
+
+Add the Cron Job:
+crontab -e
+# Run the script every hour
+0 * * * * ~/scripts/update_ddns.sh
+
+
+Run the Update Script Manually:
+
+Execute the update script to see if it successfully updates the DNS records
+~/scripts/update_ddns.sh
+
+
+dig @localhost +short ns1.georgianlens.com
+dig @localhost +short www.georgianlens.com
+
+
