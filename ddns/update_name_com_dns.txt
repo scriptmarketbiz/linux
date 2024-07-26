@@ -1,0 +1,66 @@
+sudo nano /home/geosfero/scripts/update_namecom_record.sh
+
+#!/bin/bash
+
+# Name.com credentials
+NAMECOM_USERNAME="geosfero"
+NAMECOM_TOKEN="274080b11011befce4f9f802e25ddbd4565e6974"
+DOMAIN="georgianlens.com"
+HOST="ns1"
+
+# File to store the current IP address
+IP_FILE="/home/geosfero/scripts/current_ip.txt"
+
+# Get the current public IP address
+CURRENT_IP=$(curl -s http://checkip.amazonaws.com)
+
+# Read the previous IP address from the file
+if [ -f "$IP_FILE" ]; then
+    PREVIOUS_IP=$(cat "$IP_FILE")
+else
+    PREVIOUS_IP=""
+fi
+
+# Compare the current IP with the previous IP
+if [ "$CURRENT_IP" != "$PREVIOUS_IP" ]; then
+    echo "IP address has changed. Updating Name.com A record."
+
+    # Retrieve the record ID for ns1.georgianlens.com
+    RECORD_ID=$(curl -s -X GET "https://api.name.com/v4/domains/$DOMAIN/records" \
+        -u "$NAMECOM_USERNAME:$NAMECOM_TOKEN" \
+        -H "Content-Type: application/json" | jq -r '.records[] | select(.host=="ns1") | .id')
+
+    # Update the DNS record at Name.com
+    curl -s -X PUT "https://api.name.com/v4/domains/$DOMAIN/records/$RECORD_ID" \
+         -u "$NAMECOM_USERNAME:$NAMECOM_TOKEN" \
+         -H "Content-Type: application/json" \
+         -d '{
+               "host": "'$HOST'",
+               "type": "A",
+               "answer": "'$CURRENT_IP'",
+               "ttl": 300
+             }'
+
+    # Save the current IP address to the file
+    echo "$CURRENT_IP" > "$IP_FILE"
+else
+    echo "IP address has not changed. No update needed."
+fi
+
+
+
+chmod +x /home/geosfero/scripts/update_namecom_record.sh
+
+
+sudo apt-get install jq
+
+
+//---gatestva
+/home/geosfero/scripts/update_namecom_record.sh
+
+
+
+crontab -e
+
+
+
