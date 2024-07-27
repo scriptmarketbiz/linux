@@ -1,0 +1,89 @@
+#!/bin/bash
+
+# Name.com credentials
+NAMECOM_USERNAME="geosfero"
+NAMECOM_TOKEN="274080b11011befce4f9f802e25ddbd4565e6974"
+
+# Array of domains and hosts to update
+DOMAINS=("georgianlens.com" "carparts-usa.com")
+HOSTS=("" "www" "*")
+
+# File to store the current IP address
+IP_FILE="/home/geosfero/scripts/current_ip.txt"
+
+# Get the current public IP address
+CURRENT_IP=$(curl -s http://checkip.amazonaws.com)
+
+# Read the previous IP address from the file
+if [ -f "$IP_FILE" ]; then
+    PREVIOUS_IP=$(cat "$IP_FILE")
+else
+    PREVIOUS_IP=""
+fi
+
+# Compare the current IP with the previous IP
+if [ "$CURRENT_IP" != "$PREVIOUS_IP" ]; then
+    echo "IP address has changed. Updating Name.com A records."
+
+    # Loop through each domain
+    for DOMAIN in "${DOMAINS[@]}"; do
+        echo "Processing domain: $DOMAIN"
+
+        # Retrieve all records for the domain
+        RECORDS=$(curl -s -X GET "https://api.name.com/v4/domains/$DOMAIN/records" \
+            -u "$NAMECOM_USERNAME:$NAMECOM_TOKEN" \
+            -H "Content-Type: application/json")
+        
+        echo "All records for the domain:"
+        echo "$RECORDS" | jq '.records[] | {id, host, answer}'
+
+        # Loop through each host
+        for HOST in "${HOSTS[@]}"; do
+            echo "Processing host: '$HOST'"
+
+            # Find the record ID for the current host
+            if [ "$HOST" == "" ] || [ "$HOST" == "@" ]; then
+                RECORD_ID=$(echo "$RECORDS" | jq -r '.records[] | select(.host==null or .host=="") | .id')
+            else
+                RECORD_ID=$(echo "$RECORDS" | jq -r --arg HOST "$HOST" '.records[] | select(.host==$HOST) | .id')
+            fi
+
+            if [ -z "$RECORD_ID" ]; then
+                echo "No RECORD_ID found for host: $HOST. Creating new record."
+
+                # Create the DNS record at Name.com
+                CREATE_RESPONSE=$(curl -s -X POST "https://api.name.com/v4/domains/$DOMAIN/records" \
+                     -u "$NAMECOM_USERNAME:$NAMECOM_TOKEN" \
+                     -H "Content-Type: application/json" \
+                     -d '{
+                           "host": "'$HOST'",
+                           "type": "A",
+                           "answer": "'$CURRENT_IP'",
+                           "ttl": 300
+                         }')
+
+                echo "Create response for host $HOST: $CREATE_RESPONSE"
+            else
+                echo "Retrieved RECORD_ID: $RECORD_ID for host: $HOST"
+
+                # Update the DNS record at Name.com
+                UPDATE_RESPONSE=$(curl -s -X PUT "https://api.name.com/v4/domains/$DOMAIN/records/$RECORD_ID" \
+                     -u "$NAMECOM_USERNAME:$NAMECOM_TOKEN" \
+                     -H "Content-Type: application/json" \
+                     -d '{
+                           "host": "'$HOST'",
+                           "type": "A",
+                           "answer": "'$CURRENT_IP'",
+                           "ttl": 300
+                         }')
+
+                echo "Update response for host $HOST: $UPDATE_RESPONSE"
+            fi
+        done
+    done
+
+    # Save the current IP address to the file
+    echo "$CURRENT_IP" > "$IP_FILE"
+else
+    echo "IP address has not changed. No update needed."
+fi
